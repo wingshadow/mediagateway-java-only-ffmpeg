@@ -25,6 +25,97 @@
 - Spring Boot 2.7.18
 - Maven 3.6+
 - FFmpeg
+- Apache Commons Exec 1.4.0（进程管理）
+
+## FFmpeg 进程管理（Apache Commons Exec）
+
+项目使用 [Apache Commons Exec](https://commons.apache.org/proper/commons-exec/) 替代原生 `ProcessBuilder` 管理 FFmpeg 子进程，核心优势：
+
+### 1. 进程管理更可靠
+
+| 特性 | ProcessBuilder | Commons Exec |
+|---|---|---|
+| 强制杀死进程 | `process.destroy()` 只发 SIGTERM，子进程可能残留 | `watchdog.destroyProcess()` 确保进程终止 |
+| 超时控制 | 需自己写计时线程 | `ExecuteWatchdog` 内置超时杀进程 |
+| 退出码检查 | 需手动 `waitFor()` + 判断 | `setExitValues()` 声明可接受退出码，不匹配自动抛异常 |
+| 进程存活检测 | `process.isAlive()` 某些 JVM 实现不可靠 | `watchdog.isWatching()` 稳定可靠 |
+
+### 2. 流处理开箱即用
+
+```java
+// ProcessBuilder：手动开线程读 stdout/stderr，否则进程会阻塞挂死
+new Thread(() -> { while((line = reader.readLine()) != null) {...} }).start();
+
+// Commons Exec：PumpStreamHandler 自动泵流，LogOutputStream 逐行回调
+PumpStreamHandler sh = new PumpStreamHandler(logOut, logErr);
+executor.setStreamHandler(sh);
+```
+
+不用自己管理线程，不会因为缓冲区满导致 FFmpeg 卡死。
+
+### 3. 异步执行 + 结果回调
+
+```java
+DefaultExecuteResultHandler handler = new DefaultExecuteResultHandler();
+executor.execute(cmdLine, handler);  // 立即返回，不阻塞
+// 之后随时检查
+handler.hasResult();      // 是否已结束
+handler.getExitValue();   // 退出码
+handler.getException();   // 异常
+```
+
+ProcessBuilder 的 `execute()` 是阻塞的，异步需自己 `new Thread`。
+
+### 4. 命令行构建更安全
+
+```java
+// ProcessBuilder：空格、引号需自己处理，容易出错
+processBuilder.command("ffmpeg", "-i", "rtsp://...");
+
+// Commons Exec：CommandLine 自动处理参数转义
+CommandLine cmd = new CommandLine("ffmpeg");
+cmd.addArgument("-i", false);
+cmd.addArgument("rtsp://admin:p@ss word@ip", false);  // 自动处理特殊字符
+```
+
+### 5. 对本项目的实际收益
+
+- **FLV 长连接**：客户端断连后 `watchdog.destroyProcess()` 立即杀 FFmpeg，不会残留进程占带宽
+- **stderr 日志**：FFmpeg 大量输出到 stderr，`LogOutputStream` 逐行写日志，不用手动开线程
+- **stdout 直接写 HTTP 响应**：`PumpStreamHandler` 自动泵流到 `outputStream`，配合 `FilterOutputStream` 防止关闭
+- **退出码容错**：`setExitValues(null)` 不检查退出码，FFmpeg 被 kill 时不会抛异常中断流
+
+### 6. 代码示例
+
+```java
+// 构建 Executor（Builder 模式，1.4.0 推荐写法）
+DefaultExecutor executor = DefaultExecutor.builder().get();
+executor.setExitValues(null);  // 不检查退出码
+
+// 创建 Watchdog（无限超时 = 手动控制生命周期）
+ExecuteWatchdog watchdog = ExecuteWatchdog.builder()
+        .setTimeout(Duration.ofMillis(ExecuteWatchdog.INFINITE_TIMEOUT))
+        .get();
+executor.setWatchdog(watchdog);
+
+// stdout → HTTP 响应流，stderr → 日志
+PumpStreamHandler streamHandler = new PumpStreamHandler(
+        nonClosingOut,  // FilterOutputStream 包装，防止关闭 HTTP 流
+        new LogOutputStream() {
+            @Override
+            protected void processLine(String line, int logLevel) {
+                log.info("[FFmpeg-FLV:{}] {}", streamId, line);
+            }
+        });
+executor.setStreamHandler(streamHandler);
+
+// 异步执行
+DefaultExecuteResultHandler resultHandler = new DefaultExecuteResultHandler();
+executor.execute(cmdLine, resultHandler);
+
+// 客户端断连时杀进程
+watchdog.destroyProcess();
+```
 
 ## 项目结构
 

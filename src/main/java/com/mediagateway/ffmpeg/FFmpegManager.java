@@ -2,12 +2,16 @@ package com.mediagateway.ffmpeg;
 
 import com.mediagateway.config.GatewayProperties;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.exec.CommandLine;
+import org.apache.commons.exec.DefaultExecuteResultHandler;
+import org.apache.commons.exec.DefaultExecutor;
+import org.apache.commons.exec.ExecuteWatchdog;
+import org.apache.commons.exec.LogOutputStream;
+import org.apache.commons.exec.PumpStreamHandler;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -19,7 +23,8 @@ import java.util.Map;
 /**
  * FFmpeg 进程管理器（每个流一个实例）
  *
- * 管理 FFmpeg 子进程：从摄像头拉取 RTSP 流，转码输出为本地 HLS 切片，
+ * 使用 Apache Commons Exec 管理 FFmpeg 子进程：
+ * 从摄像头拉取 RTSP 流，转码输出为本地 HLS 切片，
  * 由 Spring Boot 静态资源服务通过 HTTP 提供播放。
  */
 @Slf4j
@@ -29,7 +34,8 @@ public class FFmpegManager {
     private final String hlsOutputDir;
     private final int hlsTime;
     private final int hlsListSize;
-    private Process process;
+    private ExecuteWatchdog watchdog;
+    private DefaultExecuteResultHandler resultHandler;
     private String streamId;
 
     public FFmpegManager(GatewayProperties.FFmpegConfig config, String hlsOutputDir, int hlsTime, int hlsListSize) {
@@ -61,21 +67,6 @@ public class FFmpegManager {
     public static boolean isAvailable(String binPath) {
         String resolved = resolveBinPath(binPath);
         return new File(resolved).isFile();
-    }
-
-    /**
-     * Java 8 兼容的进程存活检测（替代 Process.isAlive()）
-     */
-    private static boolean isProcessAlive(Process process) {
-        if (process == null) {
-            return false;
-        }
-        try {
-            process.exitValue();
-            return false;
-        } catch (IllegalThreadStateException e) {
-            return true;
-        }
     }
 
     /**
@@ -166,32 +157,42 @@ public class FFmpegManager {
                 isCopy ? "复制" : "转码", streamId, sourceRtsp, outputPath, config.getVideoCodec(), res, br);
 
         try {
-            ProcessBuilder pb = new ProcessBuilder(cmd);
-            pb.redirectErrorStream(true);
-            pb.environment().put("PATH", System.getenv("PATH"));
-            process = pb.start();
+            // 使用 Apache Commons Exec 构建命令行
+            CommandLine cmdLine = new CommandLine(binPath);
+            cmdLine.addArguments(cmd.subList(1, cmd.size()).toArray(new String[0]), false);
 
-            // 启动日志读取线程
-            Thread logThread = new Thread(() -> {
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        log.info("[FFmpeg:{}] {}", streamId, line);
-                    }
-                } catch (IOException e) {
-                    // 进程结束，忽略
+            DefaultExecutor executor = DefaultExecutor.builder().get();
+            executor.setExitValues(null); // 不检查退出码
+
+            watchdog = ExecuteWatchdog.builder().setTimeout(Duration.ofMillis(ExecuteWatchdog.INFINITE_TIMEOUT)).get();
+            executor.setWatchdog(watchdog);
+
+            // stdout 和 stderr 都输出到日志（逐行）
+            LogOutputStream logOut = new LogOutputStream() {
+                @Override
+                protected void processLine(String line, int logLevel) {
+                    log.info("[FFmpeg:{}] {}", streamId, line);
                 }
-            }, "ffmpeg-log-" + streamId);
-            logThread.setDaemon(true);
-            logThread.start();
+            };
+            LogOutputStream logErr = new LogOutputStream() {
+                @Override
+                protected void processLine(String line, int logLevel) {
+                    log.info("[FFmpeg:{}] {}", streamId, line);
+                }
+            };
+            PumpStreamHandler streamHandler = new PumpStreamHandler(logOut, logErr);
+            executor.setStreamHandler(streamHandler);
+
+            // 异步执行
+            resultHandler = new DefaultExecuteResultHandler();
+            executor.execute(cmdLine, resultHandler);
 
             // 等待一小段时间检查是否立即退出
             Thread.sleep(1000);
-            if (!isProcessAlive(process)) {
-                int exitCode = process.exitValue();
-                log.error("FFmpeg 启动后立即退出: streamId={}, exitCode={}", streamId, exitCode);
-                process = null;
+            if (!isRunning()) {
+                log.error("FFmpeg 启动后立即退出: streamId={}", streamId);
+                watchdog = null;
+                resultHandler = null;
                 return false;
             }
 
@@ -202,7 +203,8 @@ public class FFmpegManager {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            process = null;
+            watchdog = null;
+            resultHandler = null;
             return false;
         }
     }
@@ -211,24 +213,30 @@ public class FFmpegManager {
      * 停止 FFmpeg 转码进程
      */
     public synchronized void stop() {
-        if (process == null || !isProcessAlive(process)) {
-            process = null;
+        if (watchdog == null) {
             return;
         }
 
         log.info("停止 FFmpeg 转码: streamId={}", streamId);
-        process.destroy();
+        watchdog.destroyProcess();
+
+        // 等待进程退出（最多5秒）
         try {
-            if (!process.waitFor(5, java.util.concurrent.TimeUnit.SECONDS)) {
-                log.warn("FFmpeg 进程未响应 destroy，执行 destroyForcibly: streamId={}", streamId);
-                process.destroyForcibly();
-                process.waitFor(3, java.util.concurrent.TimeUnit.SECONDS);
+            if (resultHandler != null) {
+                long deadline = System.currentTimeMillis() + 5000;
+                while (!resultHandler.hasResult() && System.currentTimeMillis() < deadline) {
+                    Thread.sleep(100);
+                }
+                if (!resultHandler.hasResult()) {
+                    log.warn("FFmpeg 进程未在5秒内退出: streamId={}", streamId);
+                }
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            process.destroyForcibly();
         }
-        process = null;
+
+        watchdog = null;
+        resultHandler = null;
         log.info("FFmpeg 转码已停止: streamId={}", streamId);
     }
 
@@ -236,7 +244,7 @@ public class FFmpegManager {
      * 检查 FFmpeg 是否正在运行
      */
     public boolean isRunning() {
-        return process != null && isProcessAlive(process);
+        return watchdog != null && watchdog.isWatching();
     }
 
     /**
