@@ -154,32 +154,18 @@ public class FFmpegProcess {
      * @param hlsListSize HLS 播放列表大小
      * @return true 启动成功
      */
-    public synchronized boolean startHls(String sourceRtsp,
-                                         String outputPath,
-                                         String resolution,
-                                         String bitrate,
-                                         int hlsTime,
-                                         int hlsListSize) {
+    public synchronized boolean startHls(String sourceRtsp,String outputPath,String resolution,String bitrate,
+                                         int hlsTime,int hlsListSize) {
 
-        /*
-         * 已经运行，不重复启动。
-         */
+        // 已经运行，不重复启动。
         if (isRunning()) {
             return true;
         }
 
-        /*
-         * 停止状态下允许重新启动。
-         */
+        // 停止状态下允许重新启动。
         state = FFmpegProcessState.STARTING;
         hlsMode = true;
-        hlsStartContext = new HlsStartContext(
-                sourceRtsp,
-                outputPath,
-                resolution,
-                bitrate,
-                hlsTime,
-                hlsListSize);
+        hlsStartContext = new HlsStartContext(sourceRtsp,outputPath,resolution,bitrate,hlsTime,hlsListSize);
 
         hlsOutputPath = outputPath;
         this.hlsTime = hlsTime;
@@ -251,10 +237,7 @@ public class FFmpegProcess {
      */
     public void streamFlv(String sourceRtsp, OutputStream outputStream) throws IOException, InterruptedException {
         synchronized (this) {
-            /*
-             * 当前已经有 FFmpeg 在运行，
-             * 不允许重复启动。
-             */
+            // 当前已经有 FFmpeg 在运行，不允许重复启动。
             if (isRunning()) {
                 throw new IllegalStateException("FFmpeg 已经在运行: streamId=" + streamId);
             }
