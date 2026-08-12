@@ -184,24 +184,12 @@ public class FFmpegProcess {
         hlsOutputPath = outputPath;
         this.hlsTime = hlsTime;
 
-        /*
-         * 创建新的 FFmpeg 生命周期对象。
-         */
+        // 创建新的 FFmpeg 生命周期对象。
         createProcessObjects();
-        List<String> cmd = buildHlsCommand(
-                sourceRtsp,
-                outputPath,
-                resolution,
-                bitrate,
-                hlsTime,
-                hlsListSize);
+        List<String> cmd = buildHlsCommand(sourceRtsp,outputPath,resolution,bitrate,hlsTime,hlsListSize);
         try {
-
             CommandLine commandLine = new CommandLine(cmd.get(0));
-
-            commandLine.addArguments(
-                    cmd.subList(1, cmd.size()).toArray(new String[0]),
-                    false);
+            commandLine.addArguments(cmd.subList(1, cmd.size()).toArray(new String[0]),false);
             LogOutputStream stdout = new LogOutputStream() {
                 @Override
                 protected void processLine(String line, int logLevel) {
@@ -216,45 +204,31 @@ public class FFmpegProcess {
                     handleFfmpegLog(line);
                 }
             };
-
             executor.setStreamHandler(new PumpStreamHandler(stdout, stderr));
             processStartTime = System.currentTimeMillis();
 
-            /*
-             * 异步启动 FFmpeg。
-             */
+            // 异步启动 FFmpeg。
             executor.execute(commandLine, resultHandler);
-
-            /*
-             * 等待 1 秒判断是否立即退出。
-             */
             Thread.sleep(1000L);
-
-            /*
-             * 启动后立即退出。
-             */
             if (resultHandler.hasResult()) {
+                // FFmpeg 异步执行任务的最终结果，说明 FFmpeg 进程已经结束。
                 state = FFmpegProcessState.ERROR;
                 log.error("FFmpeg HLS 启动后立即退出: streamId={}, exitValue={}", streamId, getExitValue());
                 return false;
             }
 
-            /*
-             * FFmpeg 正常进入运行状态。
-             */
+            // FFmpeg 正常进入运行状态。
             state = FFmpegProcessState.RUNNING;
             lastHlsUpdateTime = 0L;
             updateHlsFileState();
-
+            // 启动 HLS 健康监控
             startHlsMonitor();
             log.info("FFmpeg HLS 启动成功: streamId={}", streamId);
             return true;
-
         } catch (IOException e) {
             state = FFmpegProcessState.ERROR;
             log.error("FFmpeg HLS 启动失败: streamId={}", streamId, e);
             return false;
-
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             state = FFmpegProcessState.ERROR;
@@ -293,34 +267,25 @@ public class FFmpegProcess {
         CommandLine commandLine = new CommandLine(cmd.get(0));
         commandLine.addArguments(cmd.subList(1, cmd.size()).toArray(new String[0]), false);
 
-        /*
-         * 客户端是否已经断开。
-         */
+        // 客户端是否已经断开。
         AtomicBoolean clientDisconnected = new AtomicBoolean(false);
 
-        /*
-         * Commons Exec 不允许关闭 Spring MVC
-         * 的 HTTP OutputStream。
-         */
-        OutputStream nonClosingOut =
-                new FilterOutputStream(outputStream) {
+        // Commons Exec 不允许关闭 Spring MVC的 HTTP OutputStream。
+        OutputStream nonClosingOut = new FilterOutputStream(outputStream) {
                     @Override
                     public void close() throws IOException {
                         flush();
                     }
                 };
 
-        /*
-         * FFmpeg stdout → HTTP。
-         *
-         * FFmpeg stderr → 日志。
-         */
+        // FFmpeg stdout → HTTP。FFmpeg stderr → 日志。
         executor.setStreamHandler(new PumpStreamHandler(
-                nonClosingOut, new LogOutputStream() {
-            @Override
-            protected void processLine(String line, int logLevel) {
-                handleFfmpegLog(line);
-            }
+                nonClosingOut,
+                new LogOutputStream() {
+                    @Override
+                    protected void processLine(String line, int logLevel) {
+                        handleFfmpegLog(line);
+                    }
         }));
         try {
             processStartTime = System.currentTimeMillis();
@@ -328,20 +293,15 @@ public class FFmpegProcess {
             executor.execute(commandLine, resultHandler);
             state = FFmpegProcessState.RUNNING;
             log.info("FFmpeg FLV 启动成功: streamId={}", streamId);
-
-            Thread disconnectWatcher =
-                    new Thread(() -> {
+            Thread disconnectWatcher = new Thread(() -> {
                         while (!clientDisconnected.get()) {
                             try {
                                 Thread.sleep(2000L);
                                 if (clientDisconnected.get()) {
                                     break;
                                 }
-                                /*
-                                 * 尝试刷新 HTTP 输出流。
-                                 */
+                                // 尝试刷新 HTTP 输出流。
                                 outputStream.flush();
-
                             } catch (InterruptedException e) {
                                 Thread.currentThread().interrupt();
                                 break;
@@ -357,7 +317,7 @@ public class FFmpegProcess {
 
             disconnectWatcher.setDaemon(true);
             disconnectWatcher.start();
-            //等待 FFmpeg 退出。
+            // 阻塞进程,等待 FFmpeg 退出。
             resultHandler.waitFor();
 
         } finally {
@@ -443,7 +403,6 @@ public class FFmpegProcess {
      * 启动 HLS 监控线程。
      */
     private synchronized void startHlsMonitor() {
-
         //已经存在监控线程。
         if (hlsMonitorRunning) {
             return;
@@ -497,10 +456,8 @@ public class FFmpegProcess {
                 }
                 break;
             }
-
             // 检查 HLS 文件。
             updateHlsFileState();
-
             // HLS 长时间没有更新。
             if (isHlsStale()) {
                 log.error("检测到 HLS 长时间没有更新: streamId={}, outputPath={}", streamId, hlsOutputPath);
