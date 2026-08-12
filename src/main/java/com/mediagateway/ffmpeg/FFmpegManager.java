@@ -72,7 +72,6 @@ public class FFmpegManager {
      */
     public void streamFlv(String streamId,String sourceRtsp,OutputStream outputStream) throws IOException, InterruptedException {
         FFmpegProcess process = getOrCreateProcess(streamId);
-
         try {
             process.streamFlv(sourceRtsp,outputStream);
         } finally {
@@ -85,7 +84,6 @@ public class FFmpegManager {
      */
     public void stop(String streamId) {
         FFmpegProcess process = processes.get(streamId);
-
         if (process == null) {
             return;
         }
