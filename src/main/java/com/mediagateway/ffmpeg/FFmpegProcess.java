@@ -252,7 +252,6 @@ public class FFmpegProcess {
 
         // 客户端是否已经断开。
         AtomicBoolean clientDisconnected = new AtomicBoolean(false);
-
         // Commons Exec 不允许关闭 Spring MVC的 HTTP OutputStream。
         OutputStream nonClosingOut = new FilterOutputStream(outputStream) {
                     @Override
