@@ -157,13 +157,8 @@ public class FFmpegProcess {
      * @param hlsListSize m3u8 中保留的 TS 分片数量
      * @return true 启动成功，false 启动失败
      */
-    public synchronized boolean startHls(
-            String sourceRtsp,
-            String outputPath,
-            String resolution,
-            String bitrate,
-            int hlsTime,
-            int hlsListSize) {
+    public synchronized boolean startHls(String sourceRtsp, String outputPath, String resolution, String bitrate,
+                                         int hlsTime, int hlsListSize) {
 
         /*
          * 如果当前 FFmpeg 已经运行，
@@ -176,22 +171,13 @@ public class FFmpegProcess {
         /*
          * 构建 FFmpeg HLS 命令。
          */
-        List<String> cmd = buildHlsCommand(
-                sourceRtsp,
-                outputPath,
-                resolution,
-                bitrate,
-                hlsTime,
-                hlsListSize);
-
+        List<String> cmd = buildHlsCommand(sourceRtsp, outputPath, resolution, bitrate, hlsTime, hlsListSize);
         try {
-
             /*
              * 第一个参数为 FFmpeg 可执行文件，
              * 后续参数作为 FFmpeg 命令行参数。
              */
             CommandLine commandLine = new CommandLine(cmd.get(0));
-
             commandLine.addArguments(
                     cmd.subList(1, cmd.size()).toArray(new String[0]),
                     false);
@@ -203,29 +189,19 @@ public class FFmpegProcess {
              * 因此这里将 stdout 和 stderr 都交给日志处理器。
              */
             executor.setStreamHandler(new PumpStreamHandler(
-
-                    /*
-                     * FFmpeg 标准输出。
-                     */
                     new LogOutputStream() {
                         @Override
                         protected void processLine(String line, int logLevel) {
-                            log.info("[FFmpeg:{}] {}", streamId, line);
+                            log.debug("[FFmpeg:{}][stdout] {}", streamId, line);
                         }
                     },
-
-                    /*
-                     * FFmpeg 标准错误输出。
-                     *
-                     * FFmpeg 的运行状态、连接 RTSP、
-                     * 编码以及错误信息通常都会从 stderr 输出。
-                     */
                     new LogOutputStream() {
                         @Override
                         protected void processLine(String line, int logLevel) {
-                            log.info("[FFmpeg:{}] {}", streamId, line);
+                            log.info("[FFmpeg:{}][stderr] {}", streamId, line);
                         }
-                    }));
+                    }
+            ));
 
             /*
              * 异步启动 FFmpeg。
@@ -290,12 +266,12 @@ public class FFmpegProcess {
      * Java 程序再将 FFmpeg 的标准输出转发给 HTTP 客户端。
      * </p>
      *
-     * @param sourceRtsp  RTSP 视频源地址
+     * @param sourceRtsp   RTSP 视频源地址
      * @param outputStream HTTP 响应输出流
      * @throws IOException          IO 异常
      * @throws InterruptedException 当前线程被中断
      */
-    public void streamFlv(String sourceRtsp,OutputStream outputStream) throws IOException, InterruptedException {
+    public void streamFlv(String sourceRtsp, OutputStream outputStream) throws IOException, InterruptedException {
 
         /*
          * 构建 FFmpeg FLV 命令。
@@ -342,18 +318,7 @@ public class FFmpegProcess {
          *     → 日志。
          */
         executor.setStreamHandler(new PumpStreamHandler(
-
-                /*
-                 * FFmpeg FLV 数据。
-                 *
-                 * pipe:1 对应标准输出，
-                 * Commons Exec 将这些数据写入 HTTP OutputStream。
-                 */
                 nonClosingOut,
-
-                /*
-                 * FFmpeg 日志输出。
-                 */
                 new LogOutputStream() {
                     @Override
                     protected void processLine(String line, int logLevel) {
@@ -382,14 +347,8 @@ public class FFmpegProcess {
          * 此时停止 FFmpeg。
          */
         Thread disconnectWatcher = new Thread(() -> {
-
             while (!clientDisconnected.get()) {
-
                 try {
-
-                    /*
-                     * 每 2 秒检测一次客户端连接状态。
-                     */
                     Thread.sleep(2000);
 
                     if (clientDisconnected.get()) {
@@ -419,9 +378,7 @@ public class FFmpegProcess {
                      */
                     if (clientDisconnected.compareAndSet(false, true)) {
 
-                        log.info(
-                                "检测到 FLV 客户端断开: streamId={}",
-                                streamId);
+                        log.info("检测到 FLV 客户端断开: streamId={}", streamId);
 
                         /*
                          * 客户端已经断开，
@@ -433,7 +390,6 @@ public class FFmpegProcess {
                     break;
                 }
             }
-
         }, "flv-disconnect-watcher-" + streamId);
 
         /*
@@ -443,7 +399,6 @@ public class FFmpegProcess {
          * JVM 不会因为这个监控线程而阻止退出。
          */
         disconnectWatcher.setDaemon(true);
-
         /*
          * 启动客户端断开检测线程。
          */
@@ -453,9 +408,7 @@ public class FFmpegProcess {
 
             /*
              * 等待 FFmpeg 进程结束。
-             *
              * 正常情况下：
-             *
              * FFmpeg 持续运行
              *       ↓
              * 客户端断开
@@ -522,12 +475,7 @@ public class FFmpegProcess {
         }
 
         try {
-
             if (resultHandler != null) {
-
-                /*
-                 * 最多等待 5 秒。
-                 */
                 long deadline = System.currentTimeMillis() + 5000;
 
                 /*
@@ -535,11 +483,9 @@ public class FFmpegProcess {
                  */
                 while (!resultHandler.hasResult()
                         && System.currentTimeMillis() < deadline) {
-
                     Thread.sleep(100);
                 }
             }
-
         } catch (InterruptedException e) {
 
             /*
@@ -608,24 +554,10 @@ public class FFmpegProcess {
      * @param hlsListSize HLS 播放列表大小
      * @return FFmpeg 命令参数列表
      */
-    private List<String> buildHlsCommand(
-            String sourceRtsp,
-            String outputPath,
-            String resolution,
-            String bitrate,
-            int hlsTime,
-            int hlsListSize) {
-
-        /*
-         * 获取 FFmpeg 可执行文件路径。
-         */
+    private List<String> buildHlsCommand(String sourceRtsp,String outputPath,String resolution,String bitrate,
+                                         int hlsTime,int hlsListSize) {
         String binPath = FFmpegManager.resolveBinPath(config.getBinPath());
-
         List<String> cmd = new ArrayList<>();
-
-        /*
-         * FFmpeg 可执行文件。
-         */
         cmd.add(binPath);
 
         /*
@@ -774,10 +706,10 @@ public class FFmpegProcess {
      *
      * <p>
      * FLV 模式与 HLS 最大的区别是：
-     *
+     * <p>
      * HLS：
      * FFmpeg → m3u8 + TS 文件
-     *
+     * <p>
      * FLV：
      * FFmpeg → pipe:1 → Java OutputStream → HTTP 客户端
      * </p>
@@ -786,22 +718,10 @@ public class FFmpegProcess {
      * @return FFmpeg 命令参数列表
      */
     private List<String> buildFlvCommand(String sourceRtsp) {
-
-        /*
-         * 获取 FFmpeg 可执行文件路径。
-         */
         String binPath = FFmpegManager.resolveBinPath(config.getBinPath());
 
         List<String> cmd = new ArrayList<>();
-
-        /*
-         * FFmpeg 可执行文件。
-         */
         cmd.add(binPath);
-
-        /*
-         * RTSP 使用 TCP。
-         */
         cmd.add("-rtsp_transport");
         cmd.add("tcp");
 
@@ -827,9 +747,7 @@ public class FFmpegProcess {
          * 判断是否直接复制视频码流。
          */
         boolean copy = "copy".equalsIgnoreCase(config.getVideoCodec());
-
         if (copy) {
-
             /*
              * 视频直接复制。
              */
@@ -843,7 +761,6 @@ public class FFmpegProcess {
             cmd.add("copy");
 
         } else {
-
             /*
              * 视频编码器。
              */
@@ -894,7 +811,6 @@ public class FFmpegProcess {
          * 然后通过 PumpStreamHandler 写入 HTTP OutputStream。
          */
         cmd.add("pipe:1");
-
         return cmd;
     }
 }
