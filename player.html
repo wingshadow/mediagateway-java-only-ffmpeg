@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaGateway 播放器</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/flv.js@latest"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #0f172a;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            font-size: 22px;
+            margin-bottom: 20px;
+            color: #38bdf8;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #94a3b8;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            background-color: #1e293b;
+            color: #f1f5f9;
+            font-size: 14px;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #38bdf8;
+        }
+        .format-switch {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+        }
+        .format-switch button {
+            padding: 8px 16px;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            background-color: #1e293b;
+            color: #94a3b8;
+            transition: all 0.2s;
+        }
+        .format-switch button.active {
+            background-color: #38bdf8;
+            color: #0f172a;
+            font-weight: 600;
+            border-color: #38bdf8;
+        }
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        button {
+            padding: 10px 18px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .btn-primary {
+            background-color: #38bdf8;
+            color: #0f172a;
+            font-weight: 600;
+        }
+        .btn-primary:hover {
+            background-color: #0ea5e9;
+        }
+        .btn-secondary {
+            background-color: #334155;
+            color: #e2e8f0;
+        }
+        .btn-secondary:hover {
+            background-color: #475569;
+        }
+        .video-wrapper {
+            position: relative;
+            width: 100%;
+            padding-top: 56.25%;
+            background-color: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+        video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        .status {
+            margin-top: 16px;
+            padding: 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            min-height: 20px;
+        }
+        .status.info {
+            background-color: #1e293b;
+            color: #94a3b8;
+        }
+        .status.success {
+            background-color: #064e3b;
+            color: #6ee7b7;
+        }
+        .status.error {
+            background-color: #450a0a;
+            color: #fca5a5;
+        }
+        .tips {
+            margin-top: 20px;
+            padding: 12px;
+            background-color: #1e293b;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #94a3b8;
+            line-height: 1.6;
+        }
+        .tips code {
+            color: #38bdf8;
+            background-color: #0f172a;
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        .rtsp-section {
+            background-color: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .section-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #38bdf8;
+            margin-bottom: 12px;
+        }
+        .form-row {
+            display: flex;
+            gap: 12px;
+        }
+        .divider {
+            border-top: 1px solid #334155;
+            margin: 20px 0;
+        }
+        .response-box {
+            margin-top: 12px;
+            padding: 12px;
+            background-color: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 6px;
+            font-family: "Cascadia Code", "Fira Code", Consolas, monospace;
+            font-size: 13px;
+            color: #6ee7b7;
+            white-space: pre-wrap;
+            word-break: break-all;
+            max-height: 300px;
+            overflow-y: auto;
+            display: none;
+        }
+        .response-box.visible {
+            display: block;
+        }
+        .response-box .resp-label {
+            color: #94a3b8;
+            font-size: 12px;
+            margin-bottom: 6px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>MediaGateway 播放器</h1>
+
+    <!-- RTSP 添加流区域 -->
+    <div class="rtsp-section">
+        <div class="section-title">通过 RTSP 地址添加流</div>
+        <div class="form-row">
+            <div class="form-group" style="flex:0 0 140px;">
+                <label for="rtspName">流名称</label>
+                <input type="text" id="rtspName" placeholder="camera01">
+            </div>
+            <div class="form-group" style="flex:1;">
+                <label for="rtspUrl">RTSP 主码流地址</label>
+                <input type="text" id="rtspUrl" placeholder="rtsp://admin:123456@192.168.1.100:554/stream1">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="rtspSubUrl">RTSP 子码流地址（可选）</label>
+            <input type="text" id="rtspSubUrl" placeholder="rtsp://admin:123456@192.168.1.100:554/stream2">
+        </div>
+        <div class="btn-group">
+            <button class="btn-primary" onclick="addAndPlay()">添加并播放</button>
+            <button class="btn-secondary" onclick="fillRtspExample()">填入示例</button>
+        </div>
+        <div id="responseBox" class="response-box">
+            <div class="resp-label">API 返回值：</div>
+            <pre id="responseJson"></pre>
+        </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="format-switch">
+        <button id="btnHls" class="active" onclick="switchFormat('hls')">HLS (m3u8)</button>
+        <button id="btnFlv" onclick="switchFormat('flv')">FLV (低延迟)</button>
+    </div>
+
+    <div class="form-group">
+        <label id="urlLabel" for="playUrl">m3u8 播放地址</label>
+        <input type="text" id="playUrl" value="http://127.0.0.1:9080/hls/camera01/index.m3u8" placeholder="http://127.0.0.1:9080/hls/流名称/index.m3u8">
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-primary" onclick="play()">播放</button>
+        <button class="btn-secondary" onclick="loadExample()">填入示例</button>
+        <button class="btn-secondary" onclick="stop()">停止</button>
+    </div>
+
+    <div class="video-wrapper">
+        <video id="video" controls autoplay muted></video>
+    </div>
+
+    <div id="status" class="status info">请输入播放地址后点击播放。</div>
+
+    <div class="tips">
+        <strong>使用方式：</strong><br>
+        1. <strong>方式一（RTSP）：</strong>在上方输入流名称和 RTSP 地址，点击「添加并播放」，自动添加流并播放，API 返回值显示在下方。<br>
+        2. <strong>方式二（直接地址）：</strong>在下方播放地址栏直接输入 HLS 或 FLV 地址后点击播放。<br>
+        3. HLS 地址示例：<code>http://127.0.0.1:9080/hls/camera01/index.m3u8</code><br>
+        4. FLV 地址示例：<code>http://127.0.0.1:9080/flv/camera01.flv</code><br>
+        5. FLV 延迟更低（1-3 秒），HLS 兼容性更好。<br>
+        6. 浏览器默认禁止自动播放有声视频，播放器已默认静音（muted），可手动开启声音。<br>
+        7. <strong>推荐通过浏览器访问 <code>http://127.0.0.1:9080/player.html</code> 使用本页面</strong>，直接双击打开文件也可用，但需确保服务已启动。
+    </div>
+</div>
+
+<script>
+    let hls = null;
+    let flvPlayer = null;
+    let currentFormat = 'hls';
+    const video = document.getElementById('video');
+    const statusEl = document.getElementById('status');
+
+    // 服务器地址：通过 http:// 访问时自动使用当前域名，通过 file:// 打开时使用此地址
+    const SERVER_URL = 'http://127.0.0.1:9080';
+
+    function getBaseUrl() {
+        if (window.location.protocol === 'http:' || window.location.protocol === 'https:') {
+            return window.location.origin;
+        }
+        return SERVER_URL;
+    }
+
+    function setStatus(message, type) {
+        statusEl.className = 'status ' + type;
+        statusEl.textContent = message;
+    }
+
+    function switchFormat(format) {
+        currentFormat = format;
+        const urlInput = document.getElementById('playUrl');
+        const label = document.getElementById('urlLabel');
+
+        if (format === 'hls') {
+            document.getElementById('btnHls').classList.add('active');
+            document.getElementById('btnFlv').classList.remove('active');
+            label.textContent = 'm3u8 播放地址';
+            urlInput.placeholder = 'http://127.0.0.1:9080/hls/流名称/index.m3u8';
+        } else {
+            document.getElementById('btnFlv').classList.add('active');
+            document.getElementById('btnHls').classList.remove('active');
+            label.textContent = 'FLV 播放地址';
+            urlInput.placeholder = 'http://127.0.0.1:9080/flv/流名称.flv';
+        }
+        loadExample();
+    }
+
+    function loadExample() {
+        if (currentFormat === 'hls') {
+            document.getElementById('playUrl').value = 'http://127.0.0.1:9080/hls/camera01/index.m3u8';
+        } else {
+            document.getElementById('playUrl').value = 'http://127.0.0.1:9080/flv/camera01.flv';
+        }
+    }
+
+    function fillRtspExample() {
+        document.getElementById('rtspName').value = 'camera01';
+        document.getElementById('rtspUrl').value = 'rtsp://admin:123456@192.168.1.100:554/stream1';
+        document.getElementById('rtspSubUrl').value = '';
+    }
+
+    function showResponse(jsonObj) {
+        const box = document.getElementById('responseBox');
+        const pre = document.getElementById('responseJson');
+        pre.textContent = JSON.stringify(jsonObj, null, 2);
+        box.classList.add('visible');
+    }
+
+    async function addAndPlay() {
+        const name = document.getElementById('rtspName').value.trim();
+        const rtsp = document.getElementById('rtspUrl').value.trim();
+        const rtspSub = document.getElementById('rtspSubUrl').value.trim();
+
+        if (!name) {
+            setStatus('请输入流名称。', 'error');
+            return;
+        }
+        if (!rtsp) {
+            setStatus('请输入 RTSP 主码流地址。', 'error');
+            return;
+        }
+
+        setStatus('正在添加流：' + name + ' ...', 'info');
+
+        const body = {
+            streams: [{
+                name: name,
+                rtsp: rtsp
+            }]
+        };
+        if (rtspSub) {
+            body.streams[0].rtsp_sub = rtspSub;
+        }
+
+        try {
+            const resp = await fetch(getBaseUrl() + '/api/stream/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const json = await resp.json();
+
+            // 显示完整返回值
+            showResponse(json);
+
+            if (json.code !== 0 || !json.data || json.data.length === 0) {
+                setStatus('添加流失败：' + (json.message || '未知错误'), 'error');
+                return;
+            }
+
+            const streamInfo = json.data[0];
+            const hlsUrl = streamInfo.hls || '';
+            const flvUrl = streamInfo.http_flv || '';
+
+            let playUrl;
+            if (currentFormat === 'hls') {
+                playUrl = hlsUrl;
+            } else {
+                playUrl = flvUrl;
+            }
+
+            if (!playUrl) {
+                setStatus('API 未返回播放地址。', 'error');
+                return;
+            }
+
+            document.getElementById('playUrl').value = playUrl;
+            setStatus('流添加成功，开始播放：' + playUrl, 'success');
+            play();
+        } catch (err) {
+            setStatus('请求失败：' + err.message + '，请确认服务已启动。', 'error');
+            showResponse({ error: err.message });
+        }
+    }
+
+    function stop() {
+        if (hls) {
+            hls.destroy();
+            hls = null;
+        }
+        if (flvPlayer) {
+            flvPlayer.pause();
+            flvPlayer.unload();
+            flvPlayer.detachMediaElement();
+            flvPlayer.destroy();
+            flvPlayer = null;
+        }
+        video.pause();
+        video.removeAttribute('src');
+        video.load();
+        setStatus('已停止播放。', 'info');
+    }
+
+    function playHls(url) {
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            // Safari 原生支持 HLS
+            video.src = url;
+            video.addEventListener('loadedmetadata', () => {
+                setStatus('播放已就绪。', 'success');
+            });
+            video.addEventListener('error', () => {
+                setStatus('播放失败，请检查地址是否正确或服务是否运行。', 'error');
+            });
+        } else if (Hls.isSupported()) {
+            // 其他浏览器使用 hls.js
+            hls = new Hls({
+                debug: false,
+                enableWorker: true,
+                lowLatencyMode: true
+            });
+
+            hls.loadSource(url);
+            hls.attachMedia(video);
+
+            hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                setStatus('HLS 加载成功，开始播放。', 'success');
+                video.play().catch(err => {
+                    setStatus('自动播放被阻止：' + err.message, 'error');
+                });
+            });
+
+            hls.on(Hls.Events.ERROR, (event, data) => {
+                if (data.fatal) {
+                    switch (data.type) {
+                        case Hls.ErrorTypes.NETWORK_ERROR:
+                            setStatus('网络错误：' + data.details + '，请检查地址或服务。', 'error');
+                            break;
+                        case Hls.ErrorTypes.MEDIA_ERROR:
+                            setStatus('媒体错误：' + data.details, 'error');
+                            hls.recoverMediaError();
+                            break;
+                        default:
+                            setStatus('播放错误：' + data.details, 'error');
+                            hls.destroy();
+                            break;
+                    }
+                }
+            });
+        } else {
+            setStatus('当前浏览器不支持 HLS 播放。', 'error');
+        }
+    }
+
+    function playFlv(url) {
+        if (typeof flvjs === 'undefined') {
+            setStatus('flv.js 未加载，请检查网络连接。', 'error');
+            return;
+        }
+        if (!flvjs.isSupported()) {
+            setStatus('当前浏览器不支持 FLV 播放（需要 MSE 支持）。', 'error');
+            return;
+        }
+
+        flvPlayer = flvjs.createPlayer({
+            type: 'flv',
+            url: url,
+            isLive: true
+        }, {
+            enableWorker: false,
+            enableStashBuffer: false,
+            stashInitialSize: 128,
+            lazyLoad: false
+        });
+
+        flvPlayer.attachMediaElement(video);
+        flvPlayer.load();
+        flvPlayer.play();
+
+        flvPlayer.on(flvjs.Events.ERROR, (errorType, errorDetail, errorInfo) => {
+            setStatus('FLV 播放错误：' + errorType + ' - ' + errorDetail, 'error');
+        });
+
+        flvPlayer.on(flvjs.Events.LOADING_COMPLETE, () => {
+            setStatus('FLV 直播流已结束。', 'info');
+        });
+
+        video.addEventListener('loadedmetadata', () => {
+            setStatus('FLV 加载成功，开始播放。', 'success');
+        }, { once: true });
+    }
+
+    function play() {
+        const url = document.getElementById('playUrl').value.trim();
+        if (!url) {
+            setStatus('请输入播放地址。', 'error');
+            return;
+        }
+
+        stop();
+        setStatus('正在加载：' + url, 'info');
+
+        if (currentFormat === 'hls') {
+            playHls(url);
+        } else {
+            playFlv(url);
+        }
+    }
+
+    // 支持按回车键播放
+    document.getElementById('playUrl').addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            play();
+        }
+    });
+</script>
+</body>
+</html>

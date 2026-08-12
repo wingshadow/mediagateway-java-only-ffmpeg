@@ -1,0 +1,41 @@
+server:
+  port: 9080
+
+mediagateway:
+  stream:
+    on-demand: true
+    adaptive:
+      enabled: true
+      check-interval: 10
+      fail-threshold: 3
+      success-threshold: 5
+  ffmpeg:
+    enabled: true
+    bin-path: ffmpeg/ffmpeg.exe
+    video-codec: libx264
+    resolution: 640x480
+    bitrate: 500k
+    preset: ultrafast
+    audio-codec: aac
+    audio-bitrate: 64k
+  hls:
+    output-dir: hls
+    url-prefix: /hls
+    base-url: http://192.168.8.116:9080
+    time: 2
+    list-size: 5
+  flv:
+    enabled: true
+
+logging:
+  level:
+    com.mediagateway: INFO
+
+# 禁用异步超时，FLV 长连接不会被 30 秒切断
+spring:
+  mvc:
+    async:
+      request-timeout: -1
+  web:
+    resources:
+      add-mappings: true

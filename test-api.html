@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaGateway 添加摄像头流</title>
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background-color: #f5f7fa;
+            color: #333;
+            padding: 40px 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.1);
+            padding: 32px;
+        }
+        h1 {
+            margin-top: 0;
+            font-size: 24px;
+            color: #2c3e50;
+        }
+        .form-group {
+            margin-bottom: 18px;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+            color: #555;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        .hint {
+            font-size: 12px;
+            color: #888;
+            margin-top: 4px;
+        }
+        .btn-group {
+            margin-top: 24px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .btn-primary {
+            background-color: #3b82f6;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background-color: #2563eb;
+        }
+        .btn-secondary {
+            background-color: #e5e7eb;
+            color: #374151;
+        }
+        .btn-secondary:hover {
+            background-color: #d1d5db;
+        }
+        .result {
+            margin-top: 24px;
+            padding: 16px;
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            min-height: 80px;
+            white-space: pre-wrap;
+            word-break: break-all;
+            font-family: Consolas, Monaco, "Courier New", monospace;
+            font-size: 13px;
+        }
+        .result.success {
+            background-color: #f0fdf4;
+            border-color: #bbf7d0;
+            color: #166534;
+        }
+        .result.error {
+            background-color: #fef2f2;
+            border-color: #fecaca;
+            color: #991b1b;
+        }
+        .loading {
+            color: #3b82f6;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>MediaGateway 添加摄像头流</h1>
+    <p>填写摄像头信息后点击“添加流”，将向 <code>http://127.0.0.1:9080/api/stream/add</code> 发送 POST 请求。</p>
+
+    <div class="form-group">
+        <label for="name">流名称（name）</label>
+        <input type="text" id="name" value="camera01" placeholder="例如：camera01">
+    </div>
+
+    <div class="form-group">
+        <label for="rtsp">主码流地址（rtsp）</label>
+        <input type="text" id="rtsp" value="rtsp://admin:123456@192.168.1.100:554/stream1" placeholder="rtsp://admin:密码@ip:554/stream1">
+    </div>
+
+    <div class="form-group">
+        <label for="rtspSub">子码流地址（rtsp_sub）</label>
+        <input type="text" id="rtspSub" value="rtsp://admin:123456@192.168.1.100:554/stream2" placeholder="rtsp://admin:密码@ip:554/stream2">
+        <div class="hint">可不填，不填时仅使用主码流。</div>
+    </div>
+
+    <div class="btn-group">
+        <button class="btn-primary" onclick="addStream()">添加流</button>
+        <button class="btn-secondary" onclick="fillExample()">填入示例</button>
+        <button class="btn-secondary" onclick="clearForm()">清空</button>
+    </div>
+
+    <div id="result" class="result">等待请求...</div>
+</div>
+
+<script>
+    function fillExample() {
+        document.getElementById('name').value = 'camera01';
+        document.getElementById('rtsp').value = 'rtsp://admin:123456@192.168.1.100:554/stream1';
+        document.getElementById('rtspSub').value = 'rtsp://admin:123456@192.168.1.100:554/stream2';
+    }
+
+    function clearForm() {
+        document.getElementById('name').value = '';
+        document.getElementById('rtsp').value = '';
+        document.getElementById('rtspSub').value = '';
+    }
+
+    async function addStream() {
+        const name = document.getElementById('name').value.trim();
+        const rtsp = document.getElementById('rtsp').value.trim();
+        const rtspSub = document.getElementById('rtspSub').value.trim();
+        const resultEl = document.getElementById('result');
+
+        if (!name || !rtsp) {
+            resultEl.className = 'result error';
+            resultEl.textContent = '请填写流名称和主码流地址。';
+            return;
+        }
+
+        const payload = {
+            streams: [
+                {
+                    name: name,
+                    rtsp: rtsp
+                }
+            ]
+        };
+
+        if (rtspSub) {
+            payload.streams[0].rtsp_sub = rtspSub;
+        }
+
+        resultEl.className = 'result loading';
+        resultEl.textContent = '请求中...';
+
+        try {
+            const response = await fetch('http://127.0.0.1:9080/api/stream/add', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(payload)
+            });
+
+            const data = await response.json();
+            resultEl.className = response.ok ? 'result success' : 'result error';
+            resultEl.textContent = 'HTTP ' + response.status + '\n' + JSON.stringify(data, null, 2);
+        } catch (error) {
+            resultEl.className = 'result error';
+            resultEl.textContent = '请求失败：' + error.message + '\n\n请确认：\n1. MediaGateway 服务已启动；\n2. 服务已重新打包（CORS 跨域配置已生效）；\n3. 浏览器未拦截跨域请求。';
+        }
+    }
+</script>
+</body>
+</html>
