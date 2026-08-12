@@ -112,21 +112,15 @@ public class FFmpegManager {
      * 解析 FFmpeg 路径
      */
     public static String resolveBinPath(String binPath) {
-
         Path path = Paths.get(binPath);
-
         if (path.isAbsolute() && path.toFile().exists()) {
             return path.toString();
         }
-
         String baseDir = System.getProperty("user.dir");
-
         Path resolved = Paths.get(baseDir, binPath);
-
         if (resolved.toFile().exists()) {
             return resolved.toString();
         }
-
         return binPath;
     }
 
