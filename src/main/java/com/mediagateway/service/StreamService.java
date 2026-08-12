@@ -75,7 +75,6 @@ public class StreamService {
     @PostConstruct
     public void init() {
         log.info("StreamService 初始化开始");
-
         if (properties.getStream().getAdaptive().isEnabled()) {
             startAdaptiveLoop();
         }
@@ -606,10 +605,7 @@ public class StreamService {
      * 客户端真正请求 FLV 时，由 FlvController 调用 FFmpegManager
      * 创建对应的 FLV FFmpeg 进程。
      */
-    public Map<String, Object> addFlvStream(
-            String name,
-            String rtsp,
-            String rtspSub) {
+    public Map<String, Object> addFlvStream(String name,String rtsp,String rtspSub) {
 
         String streamId = buildStreamId(name);
 
@@ -676,26 +672,19 @@ public class StreamService {
     // ==================== 工具方法 ====================
 
     private String buildHlsUrl(String streamId) {
-
         String prefix = properties.getHls().getUrlPrefix();
-
         if (!prefix.startsWith("/")) {
             prefix = "/" + prefix;
         }
 
         String path = prefix + "/" + streamId + "/index.m3u8";
-
         String baseUrl = properties.getHls().getBaseUrl();
-
         if (baseUrl != null && !baseUrl.isEmpty()) {
-
             baseUrl = baseUrl.endsWith("/")
                     ? baseUrl.substring(0, baseUrl.length() - 1)
                     : baseUrl;
-
             return baseUrl + path;
         }
-
         return path;
     }
 
@@ -704,45 +693,35 @@ public class StreamService {
         String baseUrl = properties.getHls().getBaseUrl();
 
         if (baseUrl != null && !baseUrl.isEmpty()) {
-
             baseUrl = baseUrl.endsWith("/")
                     ? baseUrl.substring(0, baseUrl.length() - 1)
                     : baseUrl;
-
             return baseUrl + "/api/flv/" + streamId + ".flv";
         }
-
         return "/api/flv/" + streamId + ".flv";
     }
 
     private boolean isHlsReady(String streamId) {
-
         Path m3u8 = Paths.get(
                 properties.getHls().getOutputDir(),
                 streamId,
                 "index.m3u8");
-
         if (!Files.exists(m3u8)) {
             return false;
         }
 
         long lastModified = m3u8.toFile().lastModified();
-
         return System.currentTimeMillis() - lastModified < 10000L;
     }
 
     private void cleanupHlsDirectory(String streamId) {
-
         try {
-
             Path hlsDir = Paths.get(
                     properties.getHls().getOutputDir(),
                     streamId);
-
             if (!Files.exists(hlsDir)) {
                 return;
             }
-
             Files.walk(hlsDir)
                     .sorted(Comparator.reverseOrder())
                     .forEach(path -> {
