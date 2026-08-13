@@ -113,10 +113,20 @@ public class FFmpegProcess {
     private static final long HLS_MONITOR_INTERVAL_MS = 2000L;
 
     /**
+     * HLS 启动宽限时间。
+     *
+     * <p>
+     * 首个 m3u8 文件生成可能较慢（RTSP 连接 + 流分析 + 首分片编码），
+     * 在此期间不判定为异常。
+     * </p>
+     */
+    private static final long HLS_STARTUP_GRACE_MS = 30000L;
+
+    /**
      * HLS 最大允许无更新时间。
      *
      * <p>
-     * 如果 m3u8 超过该时间没有更新，
+     * m3u8 首次生成后，如果超过该时间没有更新，
      * 认为 FFmpeg/HLS 输出异常。
      * </p>
      */
@@ -174,8 +184,8 @@ public class FFmpegProcess {
         createProcessObjects();
         List<String> cmd = buildHlsCommand(sourceRtsp,outputPath,resolution,bitrate,hlsTime,hlsListSize);
         try {
-            CommandLine commandLine = new CommandLine(cmd.get(0));
-            commandLine.addArguments(cmd.subList(1, cmd.size()).toArray(new String[0]),false);
+            CommandLine commandLine = buildCommandLine(cmd);
+            log.info("[FFmpeg:{}] 启动命令: {}", streamId, commandLine);
             LogOutputStream stdout = new LogOutputStream() {
                 @Override
                 protected void processLine(String line, int logLevel) {
@@ -195,7 +205,7 @@ public class FFmpegProcess {
 
             // 异步启动 FFmpeg。
             executor.execute(commandLine, resultHandler);
-            Thread.sleep(1000L);
+            Thread.sleep(300L);
             if (resultHandler.hasResult()) {
                 // FFmpeg 异步执行任务的最终结果，说明 FFmpeg 进程已经结束。
                 state = FFmpegProcessState.ERROR;
@@ -247,8 +257,8 @@ public class FFmpegProcess {
         }
 
         List<String> cmd = buildFlvCommand(sourceRtsp);
-        CommandLine commandLine = new CommandLine(cmd.get(0));
-        commandLine.addArguments(cmd.subList(1, cmd.size()).toArray(new String[0]), false);
+        CommandLine commandLine = buildCommandLine(cmd);
+        log.info("[FFmpeg:{}] 启动命令: {}", streamId, commandLine);
 
         // 客户端是否已经断开。
         AtomicBoolean clientDisconnected = new AtomicBoolean(false);
@@ -485,11 +495,11 @@ public class FFmpegProcess {
      */
     private boolean isHlsStale() {
         long now = System.currentTimeMillis();
-        // FFmpeg 刚启动，给 HLS 一定生成时间。
+        // FFmpeg 刚启动，给 HLS 更长的生成时间（RTSP 连接 + 流分析 + 首分片编码）。
         if (lastHlsUpdateTime <= 0L) {
-            return now - processStartTime > HLS_STALE_TIMEOUT_MS;
+            return now - processStartTime > HLS_STARTUP_GRACE_MS;
         }
-        // m3u8 长时间没有更新。
+        // m3u8 首次生成后，超过该时间没有更新则判定异常。
         return now - lastHlsUpdateTime > HLS_STALE_TIMEOUT_MS;
     }
 
@@ -673,6 +683,21 @@ public class FFmpegProcess {
     }
 
     /**
+     * 构建 CommandLine，仅对 RTSP URL 参数（-i 后的值）启用自动引用，
+     * 避免对输出路径等其他参数进行不当引用导致 FFmpeg 无法打开文件。
+     */
+    private CommandLine buildCommandLine(List<String> cmd) {
+        CommandLine commandLine = new CommandLine(cmd.get(0));
+        for (int i = 1; i < cmd.size(); i++) {
+            String arg = cmd.get(i);
+            // -i 后面跟的是 RTSP URL，可能包含 & 等特殊字符，需要引用。
+            boolean needsQuoting = i > 1 && "-i".equals(cmd.get(i - 1));
+            commandLine.addArgument(arg, needsQuoting);
+        }
+        return commandLine;
+    }
+
+    /**
      * 构建 HLS FFmpeg 命令。
      */
     private List<String> buildHlsCommand(String sourceRtsp, String outputPath, String resolution, String bitrate,
@@ -682,11 +707,20 @@ public class FFmpegProcess {
         cmd.add(binPath);
         cmd.add("-rtsp_transport");
         cmd.add("tcp");
-        // 输入流分析。
+        // 减少缓冲延迟。
+        cmd.add("-fflags");
+        cmd.add("nobuffer");
+        // 低延迟解码。
+        cmd.add("-flags");
+        cmd.add("low_delay");
+        // 禁用解复用器延迟。
+        cmd.add("-max_delay");
+        cmd.add("0");
+        // 输入流分析（最小化探测，加快启动）。
         cmd.add("-analyzeduration");
-        cmd.add("1000000");
+        cmd.add("0");
         cmd.add("-probesize");
-        cmd.add("524288");
+        cmd.add("32");
         // RTSP 地址。
         cmd.add("-i");
         cmd.add(sourceRtsp);
@@ -701,12 +735,16 @@ public class FFmpegProcess {
             // 视频编码器。
             cmd.add("-c:v");
             cmd.add(config.getVideoCodec());
-            // 分辨率。
-            cmd.add("-s");
-            cmd.add(resolution);
-            // 视频码率。
-            cmd.add("-b:v");
-            cmd.add(bitrate);
+            // 分辨率（为空则不指定，使用源分辨率）。
+            if (resolution != null && !resolution.isEmpty()) {
+                cmd.add("-s");
+                cmd.add(resolution);
+            }
+            // 视频码率（为空则不指定，使用编码器默认值）。
+            if (bitrate != null && !bitrate.isEmpty()) {
+                cmd.add("-b:v");
+                cmd.add(bitrate);
+            }
             // 编码预设。
             cmd.add("-preset");
             cmd.add(config.getPreset());
@@ -720,6 +758,9 @@ public class FFmpegProcess {
         // HLS 输出。
         cmd.add("-f");
         cmd.add("hls");
+        // HLS 首个分片时长（秒），设为 1 使 m3u8 更快生成。
+        cmd.add("-hls_init_time");
+        cmd.add("1");
         // HLS 分片时间。
         cmd.add("-hls_time");
         cmd.add(String.valueOf(hlsTime));
@@ -729,8 +770,8 @@ public class FFmpegProcess {
         // 删除旧分片并追加播放列表。
         cmd.add("-hls_flags");
         cmd.add("delete_segments+append_list");
-        // m3u8 输出路径。
-        cmd.add(outputPath);
+        // m3u8 输出路径（正斜杠，避免 Commons Exec 在 Windows 上对反斜杠的处理问题）。
+        cmd.add(outputPath.replace('\\', '/'));
         return cmd;
     }
 
@@ -757,8 +798,11 @@ public class FFmpegProcess {
         if (copy) {
             cmd.add("-c:v");
             cmd.add("copy");
+            // FLV 容器不支持 pcm_alaw 等编码，音频必须转码为 AAC。
             cmd.add("-c:a");
-            cmd.add("copy");
+            cmd.add("aac");
+            cmd.add("-b:a");
+            cmd.add("64k");
         } else {
             // 视频编码器。
             cmd.add("-c:v");

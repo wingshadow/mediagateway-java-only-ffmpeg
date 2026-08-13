@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MediaGateway 播放器</title>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-    <script src="https://cdn.jsdelivr.net/npm/flv.js@latest"></script>
+    <script src="js/hls.min.js"></script>
+    <script src="js/flv.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -202,22 +202,17 @@
     <!-- RTSP 添加流区域 -->
     <div class="rtsp-section">
         <div class="section-title">通过 RTSP 地址添加流</div>
-        <div class="form-row">
-            <div class="form-group" style="flex:0 0 140px;">
-                <label for="rtspName">流名称</label>
-                <input type="text" id="rtspName" placeholder="camera01">
-            </div>
-            <div class="form-group" style="flex:1;">
-                <label for="rtspUrl">RTSP 主码流地址</label>
-                <input type="text" id="rtspUrl" placeholder="rtsp://admin:123456@192.168.1.100:554/stream1">
-            </div>
+        <div class="form-group">
+            <label for="rtspName">流名称</label>
+            <input type="text" id="rtspName" placeholder="camera01">
         </div>
         <div class="form-group">
-            <label for="rtspSubUrl">RTSP 子码流地址（可选）</label>
-            <input type="text" id="rtspSubUrl" placeholder="rtsp://admin:123456@192.168.1.100:554/stream2">
+            <label for="rtspUrl">RTSP 地址</label>
+            <input type="text" id="rtspUrl" placeholder="rtsp://admin:123456@192.168.1.100:554/stream1">
         </div>
         <div class="btn-group">
-            <button class="btn-primary" onclick="addAndPlay()">添加并播放</button>
+            <button class="btn-primary" onclick="addAndPlay('hls')">添加并播放 HLS</button>
+            <button class="btn-primary" onclick="addAndPlay('flv')">添加并播放 FLV</button>
             <button class="btn-secondary" onclick="fillRtspExample()">填入示例</button>
         </div>
         <div id="responseBox" class="response-box">
@@ -228,10 +223,6 @@
 
     <div class="divider"></div>
 
-    <div class="format-switch">
-        <button id="btnHls" class="active" onclick="switchFormat('hls')">HLS (m3u8)</button>
-        <button id="btnFlv" onclick="switchFormat('flv')">FLV (低延迟)</button>
-    </div>
 
     <div class="form-group">
         <label id="urlLabel" for="playUrl">m3u8 播放地址</label>
@@ -279,17 +270,12 @@
         const label = document.getElementById('urlLabel');
 
         if (format === 'hls') {
-            document.getElementById('btnHls').classList.add('active');
-            document.getElementById('btnFlv').classList.remove('active');
             label.textContent = 'm3u8 播放地址';
             urlInput.placeholder = 'http://127.0.0.1:9080/hls/流名称/index.m3u8';
         } else {
-            document.getElementById('btnFlv').classList.add('active');
-            document.getElementById('btnHls').classList.remove('active');
             label.textContent = 'FLV 播放地址';
             urlInput.placeholder = 'http://127.0.0.1:9080/flv/流名称.flv';
         }
-        loadExample();
     }
 
     function loadExample() {
@@ -303,7 +289,6 @@
     function fillRtspExample() {
         document.getElementById('rtspName').value = 'camera01';
         document.getElementById('rtspUrl').value = 'rtsp://admin:123456@192.168.1.100:554/stream1';
-        document.getElementById('rtspSubUrl').value = '';
     }
 
     function showResponse(jsonObj) {
@@ -313,19 +298,21 @@
         box.classList.add('visible');
     }
 
-    async function addAndPlay() {
+    async function addAndPlay(format) {
         const name = document.getElementById('rtspName').value.trim();
         const rtsp = document.getElementById('rtspUrl').value.trim();
-        const rtspSub = document.getElementById('rtspSubUrl').value.trim();
 
         if (!name) {
             setStatus('请输入流名称。', 'error');
             return;
         }
         if (!rtsp) {
-            setStatus('请输入 RTSP 主码流地址。', 'error');
+            setStatus('请输入 RTSP 地址。', 'error');
             return;
         }
+
+        // 切换播放格式
+        switchFormat(format);
 
         setStatus('正在添加流：' + name + ' ...', 'info');
 
@@ -335,29 +322,46 @@
                 rtsp: rtsp
             }]
         };
-        if (rtspSub) {
-            body.streams[0].rtsp_sub = rtspSub;
-        }
 
         try {
-            const resp = await fetch('/api/stream/add', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body)
-            });
-            const json = await resp.json();
+            let resp, json;
+            if (format === 'flv') {
+                // FLV：调用 /api/flv/add，只返回 FLV 地址
+                resp = await fetch('/api/flv/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: name, rtsp: rtsp })
+                });
+            } else {
+                // HLS：调用 /api/stream/add，只返回 HLS 地址
+                resp = await fetch('/api/stream/add', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+            }
+            json = await resp.json();
 
             // 显示完整返回值
             showResponse(json);
 
-            if (json.code !== 0 || !json.data || json.data.length === 0) {
+            if (json.code !== 0 || !json.data) {
                 setStatus('添加流失败：' + (json.message || '未知错误'), 'error');
                 return;
             }
 
-            const streamInfo = json.data[0];
+            // HLS 返回 data 是数组，FLV 返回 data 是对象，统一处理
+            const streamInfo = Array.isArray(json.data) ? json.data[0] : json.data;
             const hlsUrl = streamInfo.hls || '';
             const flvUrl = streamInfo.http_flv || '';
+
+            console.log('=== 流地址信息 ===');
+            console.log('streamId:', streamInfo.streamId);
+            console.log('name:', streamInfo.name);
+            console.log('HLS 地址:', hlsUrl);
+            console.log('FLV 地址:', flvUrl);
+            console.log('当前播放格式:', currentFormat);
+            console.log('完整返回:', json);
 
             let playUrl;
             if (currentFormat === 'hls') {
@@ -366,12 +370,19 @@
                 playUrl = flvUrl;
             }
 
+            // 如果是相对路径，拼接成完整 URL
+            if (playUrl && playUrl.startsWith('/')) {
+                playUrl = window.location.origin + playUrl;
+            }
+
             if (!playUrl) {
                 setStatus('API 未返回播放地址。', 'error');
                 return;
             }
 
+            // 更新播放地址输入框和标签
             document.getElementById('playUrl').value = playUrl;
+            document.getElementById('urlLabel').textContent = (currentFormat === 'hls' ? 'm3u8' : 'FLV') + ' 播放地址';
             setStatus('流添加成功，开始播放：' + playUrl, 'success');
             play();
         } catch (err) {

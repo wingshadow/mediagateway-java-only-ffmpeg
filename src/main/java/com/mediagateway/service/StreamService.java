@@ -109,7 +109,7 @@ public class StreamService {
         for (Map<String, Object> stream : streams) {
             String name = (String) stream.get("name");
             String rtsp = (String) stream.get("rtsp");
-            String rtspSub = (String) stream.get("rtsp_sub");
+//            String rtspSub = (String) stream.get("rtsp_sub");
             String streamId = buildStreamId(name);
 
             if (cache.containsKey(streamId)) {
@@ -146,7 +146,7 @@ public class StreamService {
                 Map<String, Object> info = new ConcurrentHashMap<>();
                 info.put("name", name);
                 info.put("rtsp", rtsp);
-                info.put("rtsp_sub", rtspSub);
+//                info.put("rtsp_sub", rtspSub);
                 info.put("streamId", streamId);
                 info.put("transcoding", ffmpegEnabled);
                 info.put("currentType", ffmpegEnabled ? "transcode" : "main");
@@ -165,10 +165,8 @@ public class StreamService {
                 result.put("streamId", streamId);
                 result.put("name", name);
                 result.put("rtsp", rtsp);
-                result.put("rtsp_sub", rtspSub);
+//                result.put("rtsp_sub", rtspSub);
                 result.put("hls", buildHlsUrl(streamId));
-                result.put("webrtc", null);
-                result.put("http_flv", buildFlvUrl(streamId));
                 result.put("transcoding", ffmpegEnabled);
 
                 results.add(result);
@@ -618,7 +616,6 @@ public class StreamService {
 
         info.put("name", name);
         info.put("rtsp", rtsp);
-        info.put("rtsp_sub", rtspSub);
         info.put("streamId", streamId);
         info.put("transcoding", false);
         info.put("currentType", "main");
@@ -639,8 +636,6 @@ public class StreamService {
         result.put("name", name);
         result.put("rtsp", rtsp);
         result.put("rtsp_sub", rtspSub);
-        result.put("hls", null);
-        result.put("webrtc", null);
         result.put("http_flv", buildFlvUrl(streamId));
         result.put("transcoding", false);
 
