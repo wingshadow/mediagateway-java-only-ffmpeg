@@ -21,6 +21,8 @@ target/
 *.iml
 *.ipr
 *.class
+*.ts
+*.m3u8
 target/*
 
 ### NetBeans ###
